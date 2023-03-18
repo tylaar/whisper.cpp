@@ -3,7 +3,7 @@ set(TARGET server)
 
 find_package(Drogon CONFIG REQUIRED)
 
-add_executable(${TARGET} server.cpp)
+add_executable(${TARGET} server.cpp test_ctrl.h)
 
 set_property(TARGET server PROPERTY CXX_STANDARD 17)
 

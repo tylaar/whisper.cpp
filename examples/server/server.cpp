@@ -10,6 +10,8 @@
 #include <vector>
 #include <drogon/drogon.h>
 
+using namespace drogon;
+
 // Terminal color map. 10 colors grouped in ranges [0.0, 0.1, ..., 0.9]
 // Lowest is red, middle is yellow, highest is green.
 const std::vector<std::string> k_colors = {
@@ -488,6 +490,22 @@ bool output_wts(struct whisper_context * ctx, const char * fname, const char * f
 
 int main(int argc, char ** argv) {
     whisper_params params;
+
+    app().setLogPath("./")
+            .setLogLevel(trantor::Logger::kInfo)
+            .addListener("127.0.0.1", 8080)
+            .setThreadNum(16)
+            .registerHandler(
+                    "/user/{user-name}",
+                    [](const HttpRequestPtr &,
+                       std::function<void(const HttpResponsePtr &)> &&callback,
+                       const std::string &name) {
+                        auto resp = HttpResponse::newHttpResponse();
+                        resp->setBody("Hello, " + name + "!");
+                        callback(resp);
+                    },
+                    {Get})
+            .run();
 
     if (whisper_params_parse(argc, argv, params) == false) {
         return 1;
