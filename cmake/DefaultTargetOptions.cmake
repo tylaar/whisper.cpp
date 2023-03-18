@@ -6,7 +6,7 @@ endif()
 
 target_compile_features(${TARGET}
     PRIVATE
-        cxx_std_11
+        cxx_std_20
     )
 
 set_target_properties(${TARGET}
