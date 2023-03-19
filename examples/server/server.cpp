@@ -3,14 +3,20 @@
 #include "whisper.h"
 
 #include <cmath>
+#include <chrono>
 #include <fstream>
 #include <cstdio>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 #include <drogon/drogon.h>
 
 using namespace drogon;
+
+typedef std::chrono::high_resolution_clock Time;
+typedef std::chrono::milliseconds ms;
+typedef std::chrono::duration<float> fsec;
 
 // Terminal color map. 10 colors grouped in ranges [0.0, 0.1, ..., 0.9]
 // Lowest is red, middle is yellow, highest is green.
@@ -18,6 +24,10 @@ const std::vector<std::string> k_colors = {
     "\033[38;5;196m", "\033[38;5;202m", "\033[38;5;208m", "\033[38;5;214m", "\033[38;5;220m",
     "\033[38;5;226m", "\033[38;5;190m", "\033[38;5;154m", "\033[38;5;118m", "\033[38;5;82m",
 };
+
+int string_to_millis(std::string& duration) {
+    return std::atoi(duration.c_str());
+}
 
 //  500 -> 00:05.000
 // 6000 -> 01:00.000
@@ -90,6 +100,7 @@ struct whisper_params {
     std::vector<std::string> fname_out = {};
 };
 
+/*
 void whisper_print_usage(int argc, char ** argv, const whisper_params & params);
 
 bool whisper_params_parse(int argc, char ** argv, whisper_params & params) {
@@ -152,7 +163,9 @@ bool whisper_params_parse(int argc, char ** argv, whisper_params & params) {
     return true;
 }
 
-void whisper_print_usage(int /*argc*/, char ** argv, const whisper_params & params) {
+void whisper_print_usage(int */
+/*argc*//*
+, char ** argv, const whisper_params & params) {
     fprintf(stderr, "\n");
     fprintf(stderr, "usage: %s [options] file0.wav file1.wav ...\n", argv[0]);
     fprintf(stderr, "\n");
@@ -193,6 +206,7 @@ void whisper_print_usage(int /*argc*/, char ** argv, const whisper_params & para
     fprintf(stderr, "\n");
 }
 
+*/
 struct whisper_print_user_data {
     const whisper_params * params;
 
@@ -488,41 +502,10 @@ bool output_wts(struct whisper_context * ctx, const char * fname, const char * f
     return true;
 }
 
-int main(int argc, char ** argv) {
+int doInference(std::string file, std::string lang, std::string duration) {
     whisper_params params;
-
-    app().setLogPath("./")
-            .setLogLevel(trantor::Logger::kInfo)
-            .addListener("127.0.0.1", 8080)
-            .setThreadNum(16)
-            .registerHandler(
-                    "/user/{user-name}",
-                    [](const HttpRequestPtr &,
-                       std::function<void(const HttpResponsePtr &)> &&callback,
-                       const std::string &name) {
-                        auto resp = HttpResponse::newHttpResponse();
-                        resp->setBody("Hello, " + name + "!");
-                        callback(resp);
-                    },
-                    {Get})
-            .run();
-
-    if (whisper_params_parse(argc, argv, params) == false) {
-        return 1;
-    }
-
-    if (params.fname_inp.empty()) {
-        fprintf(stderr, "error: no input files specified\n");
-        whisper_print_usage(argc, argv, params);
-        return 2;
-    }
-
-    if (params.language != "auto" && whisper_lang_id(params.language.c_str()) == -1) {
-        fprintf(stderr, "error: unknown language '%s'\n", params.language.c_str());
-        whisper_print_usage(argc, argv, params);
-        exit(0);
-    }
-
+    params.language = std::move(lang);
+    params.fname_inp = {std::move("./samples/" + file + ".wav")};
     // whisper init
 
     struct whisper_context * ctx = whisper_init_from_file(params.model.c_str());
@@ -550,7 +533,7 @@ int main(int argc, char ** argv) {
 
     for (int f = 0; f < (int) params.fname_inp.size(); ++f) {
         const auto fname_inp = params.fname_inp[f];
-		const auto fname_out = f < (int) params.fname_out.size() && !params.fname_out[f].empty() ? params.fname_out[f] : params.fname_inp[f];
+        const auto fname_out = f < (int) params.fname_out.size() && !params.fname_out[f].empty() ? params.fname_out[f] : params.fname_inp[f];
 
         std::vector<float> pcmf32;               // mono-channel F32 PCM
         std::vector<std::vector<float>> pcmf32s; // stereo-channel F32 PCM
@@ -602,7 +585,7 @@ int main(int argc, char ** argv) {
             wparams.n_threads        = params.n_threads;
             wparams.n_max_text_ctx   = params.max_context >= 0 ? params.max_context : wparams.n_max_text_ctx;
             wparams.offset_ms        = params.offset_t_ms;
-            wparams.duration_ms      = params.duration_ms;
+            wparams.duration_ms      = string_to_millis(duration);
 
             wparams.token_timestamps = params.output_wts || params.max_len > 0;
             wparams.thold_pt         = params.word_thold;
@@ -643,7 +626,7 @@ int main(int argc, char ** argv) {
             }
 
             if (whisper_full_parallel(ctx, wparams, pcmf32.data(), pcmf32.size(), params.n_processors) != 0) {
-                fprintf(stderr, "%s: failed to process audio\n", argv[0]);
+                fprintf(stderr, "failed to process audio\n");
                 return 10;
             }
         }
@@ -688,4 +671,26 @@ int main(int argc, char ** argv) {
     whisper_free(ctx);
 
     return 0;
+}
+
+int main(int argc, char ** argv) {
+    app().setLogPath("./")
+            .setLogLevel(trantor::Logger::kInfo)
+            .addListener("127.0.0.1", 8080)
+            .setThreadNum(16)
+            .registerHandler(
+                    "/video",
+                    [](const HttpRequestPtr &request,
+                       std::function<void(const HttpResponsePtr &)> &&callback) {
+                        auto file = request->getParameter("video_file");
+                        auto lang = request->getParameter("lang");
+                        auto duration = request->getParameter("video_duration");
+                        doInference(file, lang, duration);
+                        auto resp = HttpResponse::newHttpResponse();
+                        resp->setBody("Hello, " + file + "!");
+                        callback(resp);
+                    },
+                    {Get})
+            .run();
+
 }
